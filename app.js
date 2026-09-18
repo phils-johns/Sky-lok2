@@ -16,12 +16,13 @@ const form = document.querySelector('#listingForm');
 const toast = document.querySelector('#toast');
 const imageInput = document.querySelector('#imageInput');
 const imagePreview = document.querySelector('#imagePreview');
-let listings = loadListings();
+let listings = loadLocalListings();
+let sharedStorage = false;
 let editingId = null;
 let deletingId = null;
 let selectedImage = '';
 
-function loadListings() {
+function loadLocalListings() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     return Array.isArray(saved) ? saved : [];
@@ -30,7 +31,33 @@ function loadListings() {
   }
 }
 
-function saveListings() {
+async function loadListings() {
+  try {
+    const response = await fetch('/api/listings', { cache: 'no-store' });
+    if (!response.ok) throw new Error('shared storage unavailable');
+    const remoteListings = await response.json();
+    if (!Array.isArray(remoteListings)) throw new Error('invalid listings');
+    sharedStorage = true;
+    listings = remoteListings;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(listings));
+  } catch {
+    sharedStorage = false;
+  }
+  render();
+}
+
+async function saveListings() {
+  if (sharedStorage) {
+    const response = await fetch('/api/listings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ listings })
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || 'Impossible de sauvegarder sur GitHub.');
+    }
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(listings));
 }
 
@@ -159,7 +186,7 @@ async function saveListing() {
       showToast('Envoi de l’image vers GitHub…');
       selectedImage = await uploadImage(selectedImage, name);
     } catch (error) {
-      if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
+      if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) {
         showToast(error.message === 'upload' ? 'Impossible d’enregistrer l’image sur GitHub.' : error.message);
         return;
       }
@@ -175,7 +202,12 @@ async function saveListing() {
     listings.unshift({ id: crypto.randomUUID(), name, location, contact: normalized, status, image: selectedImage });
     showToast('Logement ajouté.');
   }
-  saveListings();
+  try {
+    await saveListings();
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
   closeEditor();
   render();
 }
@@ -185,9 +217,14 @@ function openDelete(id) {
   if (typeof deleteDialog.show === 'function') deleteDialog.show();
   else deleteDialog.open = true;
 }
-function deleteListing() {
+async function deleteListing() {
   listings = listings.filter((item) => item.id !== deletingId);
-  saveListings();
+  try {
+    await saveListings();
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
   if (typeof deleteDialog.close === 'function') deleteDialog.close();
   else deleteDialog.open = false;
   deletingId = null;
@@ -231,3 +268,4 @@ document.querySelector('#themeButton').addEventListener('click', () => {
 });
 
 render();
+loadListings();

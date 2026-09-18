@@ -5,12 +5,23 @@ const listingGrid = document.querySelector('#listingGrid');
 const emptyState = document.querySelector('#emptyState');
 const searchField = document.querySelector('#searchField');
 
-function loadListings() {
+function loadLocalListings() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     return Array.isArray(saved) ? saved : [];
   } catch {
     return [];
+  }
+}
+
+async function loadListings() {
+  try {
+    const response = await fetch('/api/listings', { cache: 'no-store' });
+    if (!response.ok) throw new Error('shared storage unavailable');
+    const listings = await response.json();
+    return Array.isArray(listings) ? listings : [];
+  } catch {
+    return loadLocalListings();
   }
 }
 
@@ -29,8 +40,8 @@ function contact(item) {
   window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
 }
 
-function render() {
-  const listings = loadListings();
+async function render() {
+  const listings = await loadListings();
   const query = (searchField.value || '').trim().toLowerCase();
   const visible = listings.filter((item) => `${item.name} ${item.location} ${item.status}`.toLowerCase().includes(query));
   listingGrid.innerHTML = visible.map((item, index) => `
